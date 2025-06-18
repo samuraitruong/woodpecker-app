@@ -1,0 +1,22 @@
+{
+  "puzzles": [
+    {
+      "id": 1,
+      "fen": "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 0 1",
+      "solution": "Nf6",
+      "description": "Black to move - Find the best move"
+    },
+    {
+      "id": 2,
+      "fen": "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 0 1",
+      "solution": "exd5",
+      "description": "Black to move - Capture the pawn"
+    },
+    {
+      "id": 3,
+      "fen": "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 0 1",
+      "solution": "Nxf6",
+      "description": "Black to move - Capture the knight"
+    }
+  ]
+} 
