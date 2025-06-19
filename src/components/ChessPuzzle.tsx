@@ -16,39 +16,65 @@ function formatTime(seconds: number) {
 interface ChessPuzzleProps {
   puzzle: Puzzle;
   onComplete: (timeSpent: number) => void;
+  onStart?: () => void;
   isLastPuzzle?: boolean;
+  isFirstPuzzle?: boolean;
 }
 
-export default function ChessPuzzle({ puzzle, onComplete, isLastPuzzle = false }: ChessPuzzleProps) {
+export default function ChessPuzzle({ puzzle, onComplete, onStart, isLastPuzzle = false, isFirstPuzzle = false }: ChessPuzzleProps) {
   const router = useRouter();
   const [game, setGame] = useState<Chess | null>(null);
   const [solution, setSolution] = useState('');
-  const [startTime, setStartTime] = useState<number>(Date.now());
+  const [startTime, setStartTime] = useState<number | null>(null);
   const [isComplete, setIsComplete] = useState(false);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [puzzleTime, setPuzzleTime] = useState(0);
-  const [isPuzzleTimerRunning, setIsPuzzleTimerRunning] = useState(true);
+  const [isPuzzleTimerRunning, setIsPuzzleTimerRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [moveHistory, setMoveHistory] = useState<string[]>([]);
+  const [hasStarted, setHasStarted] = useState(false);
+  const [hasStartedAnyPuzzle, setHasStartedAnyPuzzle] = useState(false);
 
   useEffect(() => {
     if (puzzle?.fen) {
-      setGame(new Chess(puzzle.fen));
-      setStartTime(Date.now());
+      const newGame = new Chess(puzzle.fen);
+      setGame(newGame);
+      setStartTime(null);
       setIsComplete(false);
       setSolution('');
       setPuzzleTime(0);
-      setIsPuzzleTimerRunning(true);
+      setIsPuzzleTimerRunning(false);
       setError(null);
+      setMoveHistory([]);
+      setHasStarted(false);
     }
   }, [puzzle]);
 
   useEffect(() => {
-    if (!isPuzzleTimerRunning) return;
+    // Auto-start timer for subsequent puzzles after user has started solving
+    if (hasStartedAnyPuzzle && !hasStarted && !isComplete && puzzle?.fen) {
+      const now = Date.now();
+      setStartTime(now);
+      setIsPuzzleTimerRunning(true);
+      setHasStarted(true);
+    }
+  }, [puzzle, hasStartedAnyPuzzle, hasStarted, isComplete]);
+
+  useEffect(() => {
+    if (!isPuzzleTimerRunning || !startTime) return;
     const interval = setInterval(() => {
       setPuzzleTime(Math.floor((Date.now() - startTime) / 1000));
     }, 1000);
     return () => clearInterval(interval);
   }, [isPuzzleTimerRunning, startTime]);
+
+  const handleStart = () => {
+    setStartTime(Date.now());
+    setIsPuzzleTimerRunning(true);
+    setHasStarted(true);
+    setHasStartedAnyPuzzle(true);
+    onStart?.();
+  };
 
   const validateSolution = (moves: string[]): boolean => {
     const tempGame = new Chess(puzzle.fen);
@@ -64,6 +90,11 @@ export default function ChessPuzzle({ puzzle, onComplete, isLastPuzzle = false }
   };
 
   const handleSolve = useCallback(() => {
+    if (!startTime) {
+      setError('Please start the timer first');
+      return;
+    }
+
     if (!solution.trim()) {
       setError('Please enter your solution');
       return;
@@ -82,6 +113,11 @@ export default function ChessPuzzle({ puzzle, onComplete, isLastPuzzle = false }
   }, [puzzle.id, solution, startTime, onComplete]);
 
   const handleSkip = useCallback(() => {
+    if (!startTime) {
+      setError('Please start the timer first');
+      return;
+    }
+
     const timeSpent = Math.floor((Date.now() - startTime) / 1000);
     updateProgress(puzzle.id, timeSpent, '');
     setIsComplete(true);
@@ -104,6 +140,42 @@ export default function ChessPuzzle({ puzzle, onComplete, isLastPuzzle = false }
     }
   };
 
+  const onDrop = (sourceSquare: string, targetSquare: string) => {
+    if (!game || isComplete) return false;
+
+    try {
+      const move = game.move({
+        from: sourceSquare,
+        to: targetSquare,
+        promotion: 'q' // Always promote to queen for simplicity
+      });
+
+      if (move === null) return false;
+
+      setGame(new Chess(game.fen()));
+      
+      // Add move to history and update solution
+      const newMoveHistory = [...moveHistory, move.san];
+      setMoveHistory(newMoveHistory);
+      setSolution(newMoveHistory.join(' '));
+      setError(null);
+
+      return true;
+    } catch (error) {
+      return false;
+    }
+  };
+
+  const resetBoard = () => {
+    if (puzzle?.fen) {
+      const newGame = new Chess(puzzle.fen);
+      setGame(newGame);
+      setSolution('');
+      setMoveHistory([]);
+      setError(null);
+    }
+  };
+
   if (!puzzle || !game) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -117,8 +189,20 @@ export default function ChessPuzzle({ puzzle, onComplete, isLastPuzzle = false }
       <div className="bg-white rounded-lg shadow-lg p-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-2xl font-extrabold text-gray-900 mb-0">Puzzle #{puzzle.id}</h2>
-          <div className="font-mono text-lg font-semibold bg-gray-100 text-gray-900 px-4 py-1 rounded shadow-sm ml-4 whitespace-nowrap">
-            Time: {formatTime(puzzleTime)}
+          <div className="w-32">
+            {!hasStartedAnyPuzzle && !hasStarted && !isComplete && (
+              <button
+                onClick={handleStart}
+                className="w-full bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+              >
+                Start
+              </button>
+            )}
+            {hasStarted && (
+              <div className="w-full font-mono text-lg font-semibold bg-gray-100 text-gray-900 px-4 py-2 rounded shadow-sm text-center">
+                {formatTime(puzzleTime)}
+              </div>
+            )}
           </div>
         </div>
         <p className="text-base text-gray-700 mb-2">{puzzle.description}</p>
@@ -126,31 +210,47 @@ export default function ChessPuzzle({ puzzle, onComplete, isLastPuzzle = false }
         <div className="mb-6 flex justify-center">
           <div className="w-[400px] h-[400px]">
             <Chessboard
-              position={puzzle.fen}
+              position={game.fen()}
               boardWidth={400}
               boardOrientation="white"
-              arePiecesDraggable={false}
+              arePiecesDraggable={!isComplete && hasStarted}
+              onPieceDrop={onDrop}
+              customBoardStyle={{
+                borderRadius: '4px',
+                boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5)'
+              }}
             />
           </div>
         </div>
 
-        <div className="mb-6">
+        <div className="mb-4">
           <label htmlFor="solution" className="block text-sm font-medium text-gray-800 mb-2">
-            Enter your solution:
+            Your solution:
           </label>
-          <input
-            type="text"
-            id="solution"
-            value={solution}
-            onChange={(e) => {
-              setSolution(e.target.value);
-              setError(null);
-            }}
-            className={`w-full px-3 py-2 border ${
-              error ? 'border-red-500' : 'border-gray-300'
-            } rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 placeholder-gray-400`}
-            placeholder="e.g., exd5 Nxf6"
-          />
+          <div className="flex gap-2">
+            <input
+              type="text"
+              id="solution"
+              value={solution}
+              onChange={(e) => {
+                setSolution(e.target.value);
+                setError(null);
+              }}
+              className={`flex-1 px-3 py-2 border ${
+                error ? 'border-red-500' : 'border-gray-300'
+              } rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 placeholder-gray-400`}
+              placeholder="Play moves on the board or type here..."
+              readOnly={isComplete || !hasStarted}
+            />
+            <button
+              onClick={resetBoard}
+              disabled={isComplete || !hasStarted}
+              className="px-3 py-2 bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:opacity-50 text-sm"
+              title="Reset puzzle and try again"
+            >
+              ↺
+            </button>
+          </div>
           {error && (
             <p className="mt-1 text-sm text-red-600">
               {error}
@@ -158,38 +258,32 @@ export default function ChessPuzzle({ puzzle, onComplete, isLastPuzzle = false }
           )}
         </div>
 
-        <div className="flex justify-between items-center gap-2">
-          <div className="flex gap-2">
-            {isComplete ? (
+        <div className="flex justify-center gap-2">
+          {isComplete ? (
+            <button
+              onClick={handleReview}
+              className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+            >
+              Review
+            </button>
+          ) : (
+            <>
               <button
-                onClick={handleReview}
-                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+                onClick={handleSolve}
+                disabled={!hasStarted}
+                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
               >
-                Review
+                Solve
               </button>
-            ) : (
-              <>
-                <button
-                  onClick={handleSolve}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
-                >
-                  Solve
-                </button>
-                <button
-                  onClick={handleSkip}
-                  className="bg-yellow-500 text-white px-4 py-2 rounded-md hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 disabled:opacity-50"
-                >
-                  Skip
-                </button>
-              </>
-            )}
-          </div>
-          <button
-            onClick={handleReset}
-            className="text-red-600 hover:text-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-          >
-            Reset Progress
-          </button>
+              <button
+                onClick={handleSkip}
+                disabled={!hasStarted}
+                className="bg-yellow-500 text-white px-4 py-2 rounded-md hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 disabled:opacity-50"
+              >
+                Skip
+              </button>
+            </>
+          )}
         </div>
       </div>
 

@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "copy:stockfish": "cp node_modules/stockfish/src/stockfish.js public/stockfish.js",
+    "dev": "next dev  --experimental-https",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
@@ -16,7 +17,8 @@
     "next": "15.3.3",
     "react": "^19.0.0",
     "react-chessboard": "^4.7.3",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "stockfish": "^16.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

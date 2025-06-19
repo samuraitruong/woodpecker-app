@@ -7,7 +7,7 @@ class Stockfish {
 
   constructor() {
     if (typeof window !== 'undefined') {
-      this.worker = new Worker('/stockfish.js');
+      this.worker = new Worker('/sf/stockfish-nnue-16.js');
       this.worker.onmessage = this.handleMessage.bind(this);
       this.init();
     }

@@ -4,11 +4,16 @@ interface TimerProps {
   initialTime?: number;
   onTimeUpdate?: (time: number) => void;
   className?: string;
+  isRunning?: boolean;
 }
 
-export default function Timer({ initialTime = 0, onTimeUpdate, className = '' }: TimerProps) {
+export default function Timer({ initialTime = 0, onTimeUpdate, className = '', isRunning = false }: TimerProps) {
   const [time, setTime] = useState(initialTime);
-  const [isRunning, setIsRunning] = useState(false);
+
+  // Reset timer when initialTime changes
+  useEffect(() => {
+    setTime(initialTime);
+  }, [initialTime]);
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
@@ -44,25 +49,9 @@ export default function Timer({ initialTime = 0, onTimeUpdate, className = '' }:
     return parts.join(':');
   }, []);
 
-  const toggleTimer = () => {
-    setIsRunning((prev) => !prev);
-  };
-
   return (
-    <div className={`flex items-center gap-4 ${className}`}>
-      <div className="font-mono text-2xl font-bold bg-gray-800 text-white px-4 py-2 rounded-lg">
-        {formatTime(time)}
-      </div>
-      <button
-        onClick={toggleTimer}
-        className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-          isRunning
-            ? 'bg-red-600 hover:bg-red-700 text-white'
-            : 'bg-green-600 hover:bg-green-700 text-white'
-        }`}
-      >
-        {isRunning ? 'Stop' : 'Start'}
-      </button>
+    <div className={`font-mono text-2xl font-bold bg-gray-800 text-white px-4 py-2 rounded-lg ${className}`}>
+      {formatTime(time)}
     </div>
   );
 } 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ChessPuzzle from '../components/ChessPuzzle';
 import Timer from '../components/Timer';
 import { UserProgress } from '../types';
@@ -16,7 +16,11 @@ export default function Home() {
   const [progress, setProgress] = useState<UserProgress | null>(null);
   const [totalTime, setTotalTime] = useState(0);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
+  const [isTotalTimerRunning, setIsTotalTimerRunning] = useState(false);
   const { puzzles, isLoading: puzzlesLoading, error: puzzlesError } = usePuzzles();
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [importedData, setImportedData] = useState<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const storedProgress = getStoredProgress();
@@ -51,16 +55,73 @@ export default function Home() {
     setTotalTime(time);
   };
 
+  const handlePuzzleStart = () => {
+    setIsTotalTimerRunning(true);
+  };
+
   const handleReset = () => {
     clearProgress();
     setProgress(initializeProgress());
     setCurrentPuzzleIndex(0);
     setTotalTime(0);
+    setIsTotalTimerRunning(false);
     setIsResetDialogOpen(false);
   };
 
   const handleResetClick = () => {
     setIsResetDialogOpen(true);
+  };
+
+  // Export progress as JSON
+  const handleExport = () => {
+    const progress = getStoredProgress();
+    if (!progress) return;
+    const blob = new Blob([JSON.stringify(progress, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'woodpecker-progress.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Import progress from JSON
+  const handleImportClick = () => {
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        // If local progress exists, prompt for overwrite
+        if (getStoredProgress()) {
+          setImportedData(data);
+          setIsImportDialogOpen(true);
+        } else {
+          localStorage.setItem('woodpecker-progress', JSON.stringify(data));
+          window.location.reload();
+        }
+      } catch (err) {
+        alert('Invalid file format.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImportConfirm = () => {
+    if (importedData) {
+      localStorage.setItem('woodpecker-progress', JSON.stringify(importedData));
+      setIsImportDialogOpen(false);
+      setImportedData(null);
+      window.location.reload();
+    }
   };
 
   if (puzzlesLoading) {
@@ -108,15 +169,52 @@ export default function Home() {
         confirmText="Reset"
         cancelText="Cancel"
       />
+      <ConfirmationDialog
+        isOpen={isImportDialogOpen}
+        onClose={() => setIsImportDialogOpen(false)}
+        onConfirm={handleImportConfirm}
+        title="Import Progress"
+        message="Local progress already exists. Do you want to overwrite it with the imported data? This cannot be undone."
+        confirmText="Overwrite"
+        cancelText="Cancel"
+      />
       {/* Header with timer for mobile */}
       <div className="lg:hidden fixed top-0 left-0 right-0 bg-white shadow-md z-10">
         <div className="container mx-auto px-4 py-2">
           <div className="flex items-center justify-between">
             <h1 className="text-lg font-semibold text-gray-900">Woodpecker</h1>
-            <Timer
-              initialTime={totalTime}
-              onTimeUpdate={handleTimeUpdate}
-            />
+            <div className="flex items-center gap-4">
+              <Timer
+                initialTime={totalTime}
+                onTimeUpdate={handleTimeUpdate}
+                isRunning={isTotalTimerRunning}
+              />
+              <button
+                onClick={handleExport}
+                className="text-blue-600 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 text-sm"
+              >
+                Export
+              </button>
+              <button
+                onClick={handleImportClick}
+                className="text-green-600 hover:text-green-800 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 text-sm"
+              >
+                Import
+              </button>
+              <input
+                type="file"
+                accept="application/json"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                style={{ display: 'none' }}
+              />
+              <button
+                onClick={handleResetClick}
+                className="text-red-600 hover:text-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 text-sm"
+              >
+                Reset Progress
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -126,10 +224,38 @@ export default function Home() {
         <div className="container mx-auto px-4 py-2">
           <div className="flex items-center justify-between">
             <h1 className="text-lg font-semibold text-gray-900">Woodpecker Chess Puzzles</h1>
-            <Timer
-              initialTime={totalTime}
-              onTimeUpdate={handleTimeUpdate}
-            />
+            <div className="flex items-center gap-4">
+              <Timer
+                initialTime={totalTime}
+                onTimeUpdate={handleTimeUpdate}
+                isRunning={isTotalTimerRunning}
+              />
+              <button
+                onClick={handleExport}
+                className="text-blue-600 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 text-sm"
+              >
+                Export
+              </button>
+              <button
+                onClick={handleImportClick}
+                className="text-green-600 hover:text-green-800 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 text-sm"
+              >
+                Import
+              </button>
+              <input
+                type="file"
+                accept="application/json"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                style={{ display: 'none' }}
+              />
+              <button
+                onClick={handleResetClick}
+                className="text-red-600 hover:text-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 text-sm"
+              >
+                Reset Progress
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -140,7 +266,9 @@ export default function Home() {
           <ChessPuzzle
             puzzle={puzzles[currentPuzzleIndex]}
             onComplete={handlePuzzleComplete}
+            onStart={handlePuzzleStart}
             isLastPuzzle={currentPuzzleIndex === puzzles.length - 1}
+            isFirstPuzzle={currentPuzzleIndex === 0}
           />
         </div>
       </div>

@@ -56,5 +56,7 @@ export const updateProgress = (
 };
 
 export const clearProgress = () => {
-  localStorage.removeItem('userProgress');
+  if (typeof window !== 'undefined') {
+    localStorage.clear();
+  }
 }; 

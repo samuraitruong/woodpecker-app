@@ -21,7 +21,7 @@ export function usePuzzles() {
         }
         
         const data: PuzzlesResponse = await response.json();
-        setPuzzles(data.puzzles);
+        setPuzzles(data.puzzles.slice(0, 2));
         setError(null);
       } catch (e) {
         setError(e instanceof Error ? e : new Error('Failed to fetch puzzles'));
