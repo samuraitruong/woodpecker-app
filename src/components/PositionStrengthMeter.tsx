@@ -15,17 +15,17 @@ export default function PositionStrengthMeter({ evaluation, maxValue = 5 }: Posi
       <div className="text-sm font-medium text-gray-700 mb-2">+{maxValue}</div>
       <div className="relative w-8 h-[500px] bg-gray-200">
         <div
-          className="absolute bottom-0 w-full transition-all duration-300"
+          className="absolute top-0 w-full transition-all duration-300"
           style={{
             height: `${percentage}%`,
-            background: 'linear-gradient(to top, #f3f4f6, #e5e7eb)'
+            background: 'linear-gradient(to bottom, #374151, #1f2937)'
           }}
         />
         <div
-          className="absolute top-0 w-full transition-all duration-300"
+          className="absolute bottom-0 w-full transition-all duration-300"
           style={{
             height: `${100 - percentage}%`,
-            background: 'linear-gradient(to bottom, #374151, #1f2937)'
+            background: 'linear-gradient(to top, #f3f4f6, #e5e7eb)'
           }}
         />
       </div>
