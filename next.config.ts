@@ -11,6 +11,13 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        source: '/sf17/:all*\\.wasm',
+        headers: [
+          { key: 'Content-Type', value: 'application/wasm' },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+        ],
+      },
+      {
         source: '/(.*)',
         headers: [
           { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
@@ -19,6 +26,13 @@ const nextConfig: NextConfig = {
       },
       {
         source: '/sf/:path*',
+        headers: [
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Content-Type', value: 'application/javascript' },
+        ],
+      },
+      {
+        source: '/sf17/:path*',
         headers: [
           { key: 'Access-Control-Allow-Origin', value: '*' },
           { key: 'Content-Type', value: 'application/javascript' },

@@ -10,9 +10,10 @@ interface MoveListProps {
   moves: Move[];
   currentMoveIndex: number;
   onMoveClick: (index: number) => void;
+  showMoveNumbers?: boolean;
 }
 
-export default function MoveList({ moves, currentMoveIndex, onMoveClick }: MoveListProps) {
+export default function MoveList({ moves, currentMoveIndex, onMoveClick, showMoveNumbers = true }: MoveListProps) {
   const [expandedMove, setExpandedMove] = useState<number | null>(null);
 
   const formatEvaluation = (evaluation: number) => {
@@ -27,23 +28,23 @@ export default function MoveList({ moves, currentMoveIndex, onMoveClick }: MoveL
           <div key={index} className="flex items-center gap-2">
             <button
               onClick={() => onMoveClick(index)}
-              className={`flex-1 px-2 py-1 text-left rounded ${
+              className={`flex-1 px-2 py-1 text-left rounded font-medium ${
                 index === currentMoveIndex
-                  ? 'bg-blue-100 text-blue-800'
-                  : 'hover:bg-gray-100'
+                  ? 'bg-blue-100 text-blue-900 font-semibold'
+                  : 'text-gray-900 hover:bg-gray-100'
               }`}
             >
-              {Math.floor(index / 2) + 1}.{index % 2 === 0 ? '' : '..'} {move.move}
+              {showMoveNumbers ? `${Math.floor(index / 2) + 1}.${index % 2 === 0 ? '' : '..'} ` : ''}{move.move}
             </button>
             {move.evaluation && (
-              <span className="text-sm text-gray-600">
+              <span className="text-sm text-gray-800 font-medium">
                 {formatEvaluation(move.evaluation)}
               </span>
             )}
             {move.comment && (
               <button
                 onClick={() => setExpandedMove(expandedMove === index ? null : index)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-500 hover:text-gray-700"
               >
                 💬
               </button>
@@ -52,7 +53,7 @@ export default function MoveList({ moves, currentMoveIndex, onMoveClick }: MoveL
         ))}
       </div>
       {expandedMove !== null && moves[expandedMove].comment && (
-        <div className="mt-2 p-2 bg-gray-50 rounded text-sm text-gray-700">
+        <div className="mt-2 p-2 bg-gray-50 rounded text-sm text-gray-800">
           {moves[expandedMove].comment}
         </div>
       )}

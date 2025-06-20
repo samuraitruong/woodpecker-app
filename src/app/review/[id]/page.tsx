@@ -9,6 +9,7 @@ import { PuzzleProgress } from '../../../types';
 import { stockfish } from '../../../utils/stockfish';
 import MoveList from '../../../components/MoveList';
 import PositionStrengthMeter from '../../../components/PositionStrengthMeter';
+import AnalysisLines from '../../../components/AnalysisLines';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
@@ -36,6 +37,9 @@ export default function ReviewPage() {
   const [userColor, setUserColor] = useState<'w' | 'b' | null>(null);
   const [actualMoves, setActualMoves] = useState<string[]>([]);
   const [pendingComputerMove, setPendingComputerMove] = useState(false);
+  const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
+  const [showBestMovesAfterMove, setShowBestMovesAfterMove] = useState(false);
+  const [analyzedFen, setAnalyzedFen] = useState<string>('');
 
   useEffect(() => {
     if (!params?.id) return; // Wait for params.id to be available
@@ -79,28 +83,55 @@ export default function ReviewPage() {
     }
   }, [game]);
 
+  // Run analysis when game changes during computer play
+  useEffect(() => {
+    if (game && isComputerPlaying) {
+      analyzeMultipleLines();
+    }
+  }, [game]);
+
   const evaluatePosition = async () => {
     if (!game) return;
+    // Don't reset evaluation here, only update on new data
+    // setEvaluation(null); 
+    
     const { score, pv } = await stockfish.evaluatePosition(game.fen());
     setEvaluation(score);
     
-    // Update move list with evaluation
-    setMoveList(prev => prev.map((move, index) => ({
-      ...move,
-      evaluation: index === Math.floor(currentMoveIndex / 2) ? score : move.evaluation
-    })));
+    // Update move list with evaluation - This seems incorrect as it's not a list of moves
+    // setMoveList(prev => prev.map((move, index) => ({
+    //   ...move,
+    //   evaluation: index === Math.floor(currentMoveIndex / 2) ? score : move.evaluation
+    // })));
   };
 
   const analyzeMultipleLines = async () => {
     if (!game) return;
-    const lines: AnalysisLine[] = [];
     
-    // Get top 3 lines
-    for (let i = 0; i < 3; i++) {
-      const { score, pv } = await stockfish.evaluatePosition(game.fen(), 15);
-      lines.push({ moves: pv, evaluation: score });
+    // Always use the current game state
+    let positionToAnalyze = game.fen();
+    
+    // If checkbox is checked, analyze position after player's move
+    if (showBestMovesAfterMove && isComputerPlaying && userColor) {
+      // Create a copy of the game and make the best move for the current player
+      const gameCopy = new Chess(game.fen());
+      const bestMove = await stockfish.getBestMove(game.fen());
+      if (bestMove) {
+        try {
+          const moveObj = gameCopy.move(bestMove);
+          if (moveObj) {
+            positionToAnalyze = gameCopy.fen();
+          }
+        } catch (e) {
+          console.error('Error making best move for analysis:', e);
+        }
+      }
     }
     
+    // Store the FEN being analyzed for debugging
+    setAnalyzedFen(positionToAnalyze);
+    
+    const lines = await stockfish.analyzeMultipleLines(positionToAnalyze, 15, 4);
     setAnalysisLines(lines);
   };
 
@@ -154,38 +185,41 @@ export default function ReviewPage() {
   };
 
   // Play vs Computer: event-driven, no interval
-  const playComputerIfNeeded = async (currentGame: Chess, userColor: 'w' | 'b') => {
-    console.log(isComputerPlaying, userColor, currentGame.turn());
-    if (!isComputerPlaying || !currentGame || !userColor) return;
-    if (currentGame.turn() !== userColor) {
-      // Computer's turn
-      console.log('wait for stockfish');
-      const bestMove = await stockfish.getBestMove(currentGame.fen());
-      console.log('bestMove', bestMove);
-      if (bestMove) {
-        try {
-          currentGame.move(bestMove);
-          setGame(new Chess(currentGame.fen()));
-          setActualMoves((prev) => [...prev, bestMove]);
-          setCurrentMoveIndex((prev) => prev + 1);
-          await evaluatePosition();
-        } catch (e) {
+  useEffect(() => {
+    const playComputerMove = async () => {
+      if (game && isComputerPlaying && userColor && game.turn() !== userColor) {
+        // Computer's turn
+        const bestMove = await stockfish.getBestMove(game.fen());
+        if (bestMove) {
+          try {
+            const gameCopy = new Chess(game.fen());
+            const moveObj = gameCopy.move(bestMove);
+            if (moveObj) {
+              setGame(new Chess(gameCopy.fen()));
+              setActualMoves((prev) => [...prev, moveObj.san]);
+              setCurrentMoveIndex((prev) => prev + 1);
+              setLastMove({ from: moveObj.from, to: moveObj.to });
+            } else {
+              setIsComputerPlaying(false);
+            }
+          } catch (e) {
+            console.error('Computer move error:', e);
+            setIsComputerPlaying(false);
+          }
+        } else {
           setIsComputerPlaying(false);
         }
-      } else {
-        setIsComputerPlaying(false);
       }
-    }
-  };
+    };
+
+    playComputerMove();
+  }, [isComputerPlaying, game, userColor]);
 
   // When Play vs Computer starts, lock user color and reset actualMoves
   const handleComputerPlay = async () => {
-    console.log('handleComputerPlay');
     if (!game) return;
     const fenParts = game.fen().split(' ');
     const turn = fenParts[1] as 'w' | 'b';
-
-    console.log(turn);
 
     setUserColor(turn);
     setActualMoves([]);
@@ -194,11 +228,6 @@ export default function ReviewPage() {
     setCurrentMoveIndex(0);
     setIsComputerPlaying(true);
     setIsPlaying(false);
-    // If it's computer's turn at the start, play immediately
-    if (turn !== newGame.turn()) {
-      console.log('playComputerIfNeeded');
-      await playComputerIfNeeded(newGame, turn);
-    }
   };
 
   const handlePrevMove = () => {
@@ -246,6 +275,68 @@ export default function ReviewPage() {
     return game.turn() === 'w' ? 'White to play' : 'Black to play';
   };
 
+  // Custom arrow component
+  const ArrowOverlay = ({ from, to }: { from: string; to: string }) => {
+    if (!from || !to) return null;
+    
+    const boardSize = Math.min(window.innerWidth - 100, 600);
+    const squareSize = boardSize / 8;
+    
+    // Convert chess notation to pixel coordinates
+    const fileToX = (file: string) => (file.charCodeAt(0) - 'a'.charCodeAt(0)) * squareSize + squareSize / 2;
+    const rankToY = (rank: string) => (8 - parseInt(rank)) * squareSize + squareSize / 2;
+    
+    const fromX = fileToX(from[0]);
+    const fromY = rankToY(from[1]);
+    const toX = fileToX(to[0]);
+    const toY = rankToY(to[1]);
+    
+    // Calculate arrow properties
+    const length = Math.sqrt(Math.pow(toX - fromX, 2) + Math.pow(toY - fromY, 2));
+    const angle = Math.atan2(toY - fromY, toX - fromX);
+    
+    return (
+      <svg
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: boardSize,
+          height: boardSize,
+          pointerEvents: 'none',
+          zIndex: 10
+        }}
+      >
+        <defs>
+          <marker
+            id="arrowhead"
+            markerWidth="8"
+            markerHeight="6"
+            refX="7"
+            refY="3"
+            orient="auto"
+          >
+            <polygon
+              points="0 0, 8 3, 0 6"
+              fill="#ff6b6b"
+              opacity="0.9"
+            />
+          </marker>
+        </defs>
+        <line
+          x1={fromX}
+          y1={fromY}
+          x2={toX}
+          y2={toY}
+          stroke="#ff6b6b"
+          strokeWidth="8"
+          opacity="0.9"
+          markerEnd="url(#arrowhead)"
+        />
+      </svg>
+    );
+  };
+
   // Play the correct solution moves with a delay
   const handleViewSolution = async () => {
     if (!game) return;
@@ -277,15 +368,38 @@ export default function ReviewPage() {
 
   // User move handler for Play vs Computer (only updates state, does not call game.move)
   const handleUserMove = async (move: string, newFen: string) => {
-    setGame(new Chess(newFen));
-    setActualMoves((prev) => [...prev, move]);
-    setCurrentMoveIndex((prev) => prev + 1);
-    evaluatePosition();
-    // After user move, if it's computer's turn, play immediately
-    console.log('handleUserMove', isComputerPlaying, userColor, new Chess(newFen).turn());
-    if (isComputerPlaying && userColor && new Chess(newFen).turn() !== userColor) {
-      console.log('playComputerIfNeeded');
-      await playComputerIfNeeded(new Chess(newFen), userColor);
+    if (!game || !isComputerPlaying || !userColor) return;
+    if (game.turn() === userColor) {
+      try {
+        const gameCopy = new Chess(game.fen());
+        const moveObj = gameCopy.move(move);
+        if (moveObj) {
+          setLastMove({ from: moveObj.from, to: moveObj.to });
+          setGame(new Chess(gameCopy.fen()));
+          setActualMoves((prev) => [...prev, moveObj.san]);
+          setCurrentMoveIndex((prev) => prev + 1);
+        }
+      } catch (e) {
+        // This is not a valid move, do nothing
+        console.log('Invalid user move:', e);
+      }
+    }
+  };
+
+  const handleResetComputerPlay = () => {
+    if (!puzzles || !params?.id) return;
+    const currentPuzzle = puzzles.find(p => p.id === parseInt(params.id as string));
+    if (currentPuzzle) {
+        const newGame = new Chess(currentPuzzle.fen);
+        setGame(newGame);
+        setUserColor(null);
+        setActualMoves([]);
+        setCurrentMoveIndex(0);
+        setIsComputerPlaying(false);
+        setIsPlaying(false);
+        setLastMove(null);
+        setEvaluation(null);
+        setAnalysisLines([]);
     }
   };
 
@@ -308,54 +422,100 @@ export default function ReviewPage() {
             </p>
           </div>
 
-          <div className="flex gap-2">
-            <div>
-              <PositionStrengthMeter evaluation={evaluation || 0} />
-            </div>
-            
-            <div className="flex-1">
-              <div className="aspect-square max-w-2xl">
-                <div className="mb-2 text-center text-lg font-semibold text-gray-700">{getTurnText()}</div>
-                {stockfishError && (
-                  <div className="mb-2 text-center text-red-600 text-sm">{stockfishError}</div>
-                )}
-                <Chessboard
-                  position={game.fen()}
-                  boardWidth={Math.min(window.innerWidth - 100, 600)}
-                  arePiecesDraggable={isComputerPlaying && userColor === game.turn()}
-                  onPieceDrop={(from, to) => {
-                    console.log('onPieceDrop');
-                    console.log(isComputerPlaying, userColor, game.turn());
-                    if (isComputerPlaying && userColor === game.turn()) {
-                      try {
-                        const tempGame = new Chess(game.fen());
-                        const moveObj = tempGame.move({ from, to, promotion: 'q' });
-                        if (moveObj) {
-                          // Apply the move and update state
-                          handleUserMove(moveObj.san, tempGame.fen());
-                          return true;
+          <div className="flex flex-col lg:flex-row gap-4">
+            <div className="flex flex-1 gap-2">
+              <div>
+                <PositionStrengthMeter fen={game.fen()}
+                />
+              </div>
+              
+              <div className="flex-1">
+                <div className="aspect-square max-w-2xl mx-auto lg:mx-0">
+                  <div className="mb-2 text-center text-lg font-semibold text-gray-700">{getTurnText()}</div>
+                  {stockfishError && (
+                    <div className="mb-2 text-center text-red-600 text-sm">{stockfishError}</div>
+                  )}
+                  <div className="relative">
+                    <Chessboard
+                      position={game.fen()}
+                      boardWidth={Math.min(window.innerWidth - 100, 600)}
+                      arePiecesDraggable={isComputerPlaying && userColor === game.turn()}
+                      onPieceDrop={(from, to) => {
+                        console.log('onPieceDrop');
+                        console.log(isComputerPlaying, userColor, game.turn());
+                        if (isComputerPlaying && userColor === game.turn()) {
+                          try {
+                            const tempGame = new Chess(game.fen());
+                            const moveObj = tempGame.move({ from, to, promotion: 'q' });
+                            if (moveObj) {
+                              // Apply the move and update state
+                              handleUserMove(moveObj.san, tempGame.fen());
+                              return true;
+                            }
+                            return false;
+                          } catch {
+                            return false;
+                          }
                         }
                         return false;
-                      } catch {
-                        return false;
-                      }
-                    }
-                    return false;
-                  }}
-                  customBoardStyle={{
-                    borderRadius: '4px',
-                    boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5)'
-                  }}
-                />
+                      }}
+                      customBoardStyle={{
+                        borderRadius: '4px',
+                        boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5)'
+                      }}
+                    />
+                    {lastMove && (
+                      <ArrowOverlay from={lastMove.from} to={lastMove.to} />
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="w-64">
+            <div className="w-full lg:w-80 xl:w-96 flex-shrink-0">
+              {isComputerPlaying && (
+                <div className="mb-2">
+                  <div className="p-2 bg-gray-50 rounded">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={showBestMovesAfterMove}
+                        onChange={(e) => setShowBestMovesAfterMove(e.target.checked)}
+                        className="rounded"
+                      />
+                      <span>Show best moves after my move</span>
+                    </label>
+                  </div>
+                  <AnalysisLines lines={analysisLines} analyzedFen={analyzedFen} />
+                </div>
+              )}
+
               <MoveList
                 moves={isComputerPlaying ? actualMoves.map(move => ({ move })) : moves.map(move => ({ move }))}
                 currentMoveIndex={currentMoveIndex}
                 onMoveClick={handleMoveClick}
+                showMoveNumbers={!isComputerPlaying}
               />
+
+              {isComputerPlaying && (
+                <button
+                  className="mt-4 w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded shadow"
+                  onClick={() => {
+                    if (!game) return;
+                    // Reset to initial puzzle position
+                    const currentPuzzle = puzzles.find(p => p.id === parseInt(params.id as string));
+                    if (currentPuzzle) {
+                      setGame(new Chess(currentPuzzle.fen));
+                      setActualMoves([]);
+                      setCurrentMoveIndex(0);
+                      setLastMove(null);
+                    }
+                  }}
+                >
+                  Reset Computer Play
+                </button>
+              )}
+
               {!isComputerPlaying && isCorrect !== null && (
                 <div className="mt-4 flex flex-col items-center">
                   <span className="text-base font-semibold text-gray-700 mb-1">
@@ -407,25 +567,6 @@ export default function ReviewPage() {
               >
                 {isComputerPlaying ? 'Stop' : 'Play vs Computer'}
               </button>
-              {isComputerPlaying && (
-                <div className="flex gap-2 items-center">
-                  <span className="text-sm text-gray-700">You play as:</span>
-                  <button
-                    className={`px-2 py-1 rounded ${userColor === 'w' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-                    onClick={() => setUserColor('w')}
-                    disabled={userColor === 'w'}
-                  >
-                    White
-                  </button>
-                  <button
-                    className={`px-2 py-1 rounded ${userColor === 'b' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-                    onClick={() => setUserColor('b')}
-                    disabled={userColor === 'b'}
-                  >
-                    Black
-                  </button>
-                </div>
-              )}
               <button
                 onClick={handleViewSolution}
                 disabled={isViewingSolution}
@@ -438,6 +579,13 @@ export default function ReviewPage() {
                 {isViewingSolution ? 'Playing...' : 'View Solution'}
               </button>
             </div>
+
+            <button
+              onClick={handleResetComputerPlay}
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 disabled:opacity-50"
+            >
+              Reset Computer Play
+            </button>
 
             <button
               onClick={handleNextMove}
